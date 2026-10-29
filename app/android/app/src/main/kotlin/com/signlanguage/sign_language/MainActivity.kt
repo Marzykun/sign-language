@@ -8,9 +8,15 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        val camera = SignCamera(this, this, flutterEngine.dartExecutor.binaryMessenger)
+        val camera = SignCamera(this, flutterEngine.dartExecutor.binaryMessenger)
         flutterEngine.platformViewsController.registry.registerViewFactory("sign_camera/preview", camera.viewFactory)
         signCamera = camera
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (signCamera?.onRequestPermissionsResult(requestCode, grantResults) != true) {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        }
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {

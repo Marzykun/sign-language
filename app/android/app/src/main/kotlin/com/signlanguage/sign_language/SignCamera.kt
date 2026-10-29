@@ -1,11 +1,16 @@
 package com.signlanguage.sign_language
 
+import android.Manifest
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import androidx.camera.core.CameraSelector
@@ -16,14 +21,15 @@ import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
+import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -39,13 +45,14 @@ import java.util.concurrent.Executors
  * Flutter talks to it over three channels:
  *  - platform view `sign_camera/preview`: the live camera preview
  *  - event channel `sign_camera/results`: one map per analysed frame
- *  - method channel `sign_camera/control`: `switchCamera`
+ *  - method channel `sign_camera/control`: `switchCamera`, `requestPermission`, `openSettings`
  */
 class SignCamera(
-    private val context: Context,
-    private val lifecycleOwner: LifecycleOwner,
+    private val activity: FlutterActivity,
     messenger: BinaryMessenger,
 ) {
+    private val context: Context get() = activity
+    private var pendingPermission: MethodChannel.Result? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var landmarker: HandLandmarker? = null
@@ -71,9 +78,41 @@ class SignCamera(
                     bindCamera()
                     result.success(useFrontCamera)
                 }
+                "requestPermission" -> requestPermission(result)
+                "openSettings" -> {
+                    activity.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", activity.packageName, null))
+                    )
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
+    }
+
+    /** Replies `granted`, `denied` or `permanentlyDenied`. */
+    private fun requestPermission(result: MethodChannel.Result) {
+        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            result.success("granted")
+            return
+        }
+        pendingPermission?.success("denied")
+        pendingPermission = result
+        ActivityCompat.requestPermissions(activity, arrayOf(Manifest.permission.CAMERA), PERMISSION_REQUEST)
+    }
+
+    /** Forwarded from the activity. Returns true if the request was ours. */
+    fun onRequestPermissionsResult(requestCode: Int, grantResults: IntArray): Boolean {
+        if (requestCode != PERMISSION_REQUEST) return false
+        val status = when {
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED -> "granted"
+            // Android stops showing the dialog after repeated denials; only Settings can grant it then.
+            !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.CAMERA) -> "permanentlyDenied"
+            else -> "denied"
+        }
+        pendingPermission?.success(status)
+        pendingPermission = null
+        return true
     }
 
     val viewFactory = object : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
@@ -121,7 +160,7 @@ class SignCamera(
 
             provider.unbindAll()
             try {
-                provider.bindToLifecycle(lifecycleOwner, selector, preview, analysis)
+                provider.bindToLifecycle(activity, selector, preview, analysis)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
                 sendError("camera", e.message ?: "Could not open the camera")
@@ -190,6 +229,7 @@ class SignCamera(
 
     companion object {
         private const val TAG = "SignCamera"
+        private const val PERMISSION_REQUEST = 4201
         const val MODEL_ASSET = "hand_landmarker.task"
     }
 }

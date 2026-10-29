@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import 'fingerspelling_rules.dart';
 import 'landmark_painter.dart';
@@ -17,25 +16,34 @@ class TranslatorScreen extends StatefulWidget {
   State<TranslatorScreen> createState() => _TranslatorScreenState();
 }
 
-class _TranslatorScreenState extends State<TranslatorScreen> {
+class _TranslatorScreenState extends State<TranslatorScreen> with WidgetsBindingObserver {
   final _composer = LetterComposer();
   final _tts = FlutterTts();
   StreamSubscription<HandFrame>? _frames;
-  PermissionStatus? _permission;
+  CameraPermission? _permission;
   HandFrame? _lastFrame;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _requestCamera();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back from Settings: no dialog is shown when permanently denied, so this just re-checks.
+    if (state == AppLifecycleState.resumed && _permission == CameraPermission.permanentlyDenied) {
+      _requestCamera();
+    }
+  }
+
   Future<void> _requestCamera() async {
-    final status = await Permission.camera.request();
+    final status = await SignCamera.requestPermission();
     if (!mounted) return;
     setState(() => _permission = status);
-    if (status.isGranted) _listen();
+    if (status == CameraPermission.granted) _listen();
   }
 
   void _listen() {
@@ -57,6 +65,7 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _frames?.cancel();
     _tts.stop();
     super.dispose();
@@ -68,7 +77,7 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
       appBar: AppBar(
         title: const Text('ASL Translator'),
         actions: [
-          if (_permission?.isGranted ?? false)
+          if (_permission == CameraPermission.granted)
             IconButton(
               tooltip: 'Switch camera',
               icon: const Icon(Icons.cameraswitch_outlined),
@@ -96,12 +105,12 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
   Widget _cameraArea(BuildContext context) {
     final permission = _permission;
     if (permission == null) return const CircularProgressIndicator();
-    if (!permission.isGranted) {
+    if (permission != CameraPermission.granted) {
       return _Message(
         icon: Icons.no_photography_outlined,
         text: 'Camera access is needed to read signs.',
-        action: permission.isPermanentlyDenied
-            ? FilledButton(onPressed: openAppSettings, child: const Text('Open settings'))
+        action: permission == CameraPermission.permanentlyDenied
+            ? FilledButton(onPressed: SignCamera.openSettings, child: const Text('Open settings'))
             : FilledButton(onPressed: _requestCamera, child: const Text('Allow camera')),
       );
     }

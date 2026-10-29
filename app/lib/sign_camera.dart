@@ -35,6 +35,8 @@ class HandFrame {
   final bool mirrored;
 }
 
+enum CameraPermission { granted, denied, permanentlyDenied }
+
 /// Dart side of `SignCamera.kt`.
 class SignCamera {
   static const _results = EventChannel('sign_camera/results');
@@ -46,6 +48,19 @@ class SignCamera {
       .map((event) => HandFrame.fromMap(event as Map<Object?, Object?>));
 
   static Future<void> switchCamera() => _control.invokeMethod('switchCamera');
+
+  /// Asks for camera access if needed.
+  static Future<CameraPermission> requestPermission() async {
+    final status = await _control.invokeMethod<String>('requestPermission');
+    return switch (status) {
+      'granted' => CameraPermission.granted,
+      'permanentlyDenied' => CameraPermission.permanentlyDenied,
+      _ => CameraPermission.denied,
+    };
+  }
+
+  /// Opens this app's page in system Settings.
+  static Future<void> openSettings() => _control.invokeMethod('openSettings');
 }
 
 /// The native camera preview. Its image is 3:4 (portrait), matching the landmark coordinates.
