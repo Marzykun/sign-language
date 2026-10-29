@@ -40,11 +40,6 @@ jobs:
       - run: flutter test
       - run: flutter build apk --release
 
-      - name: Show resolved MediaPipe version
-        working-directory: app/android
-        continue-on-error: true
-        run: ./gradlew -q :app:dependencyInsight --dependency com.google.mediapipe --configuration releaseRuntimeClasspath | head -20
-
       # Phones with 16 KB memory pages can't load native libraries aligned to 4 KB.
       - name: Check native libraries support 16 KB pages
         run: |
