@@ -40,6 +40,23 @@ jobs:
       - run: flutter test
       - run: flutter build apk --release
 
+      - name: Show resolved MediaPipe version
+        working-directory: app/android
+        continue-on-error: true
+        run: ./gradlew -q :app:dependencyInsight --dependency com.google.mediapipe --configuration releaseRuntimeClasspath | head -20
+
+      # Phones with 16 KB memory pages can't load native libraries aligned to 4 KB.
+      - name: Check native libraries support 16 KB pages
+        run: |
+          mkdir -p /tmp/apk && unzip -q -o build/app/outputs/flutter-apk/app-release.apk 'lib/arm64-v8a/*' 'lib/x86_64/*' -d /tmp/apk
+          bad=0
+          for so in /tmp/apk/lib/*/*.so; do
+            for align in $(readelf -lW "$so" | awk '/LOAD/ {print $NF}'); do
+              if [ $((align)) -lt 16384 ]; then echo "::error::$so is aligned to $align, needs 0x4000"; bad=1; fi
+            done
+          done
+          exit $bad
+
       - name: Rename APK
         run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/sign-translator.apk
 

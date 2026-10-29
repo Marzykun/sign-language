@@ -182,9 +182,10 @@ class SignCamera(
                 .build()
             landmarker = HandLandmarker.createFromOptions(context, options)
             true
-        } catch (e: Exception) {
-            Log.e(TAG, "Could not load $MODEL_ASSET", e)
-            sendError("model", "Could not load the hand tracking model ($MODEL_ASSET).")
+        } catch (e: Throwable) {
+            // Throwable, not Exception: a native library that fails to load throws UnsatisfiedLinkError.
+            Log.e(TAG, "Could not start hand tracking", e)
+            sendError("model", "Could not start hand tracking: $e")
             false
         }
     }
@@ -203,7 +204,11 @@ class SignCamera(
         // MediaPipe rejects timestamps that don't strictly increase.
         val timestampMs = maxOf(SystemClock.uptimeMillis(), lastTimestampMs + 1)
         lastTimestampMs = timestampMs
-        landmarker?.detectAsync(BitmapImageBuilder(bitmap).build(), timestampMs)
+        try {
+            landmarker?.detectAsync(BitmapImageBuilder(bitmap).build(), timestampMs)
+        } catch (e: Exception) {
+            Log.e(TAG, "Hand tracking failed on a frame", e)
+        }
     }
 
     private fun onResult(result: HandLandmarkerResult, input: MPImage) {

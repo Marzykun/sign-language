@@ -61,5 +61,6 @@ dependencies {
     implementation("androidx.camera:camera-camera2:$cameraxVersion")
     implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
     implementation("androidx.camera:camera-view:$cameraxVersion")
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    // Newer than 0.10.14, whose native library only loads on 4 KB-page devices.
+    implementation("com.google.mediapipe:tasks-vision:0.10.+")
 }
