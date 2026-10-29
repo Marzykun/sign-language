@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish the APK as a GitHub Release with this tag (e.g. v1.0.0). Leave empty to just build."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -43,8 +48,12 @@ jobs:
           name: sign-translator-apk
           path: app/build/app/outputs/flutter-apk/sign-translator.apk
 
-      # Pushing a tag like v1.0.0 publishes the APK as a GitHub Release.
-      - if: startsWith(github.ref, 'refs/tags/v')
+      # Pushing a tag like v1.0.0, or running this workflow by hand with a release tag,
+      # publishes the APK as a GitHub Release.
+      - if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: Sign Translator ${{ inputs.release_tag || github.ref_name }}
           files: app/build/app/outputs/flutter-apk/sign-translator.apk

@@ -13,7 +13,8 @@ Every push builds a release APK with GitHub Actions:
 
 - **Latest build:** open the [Actions tab](../../actions/workflows/build-apk.yml), pick the newest green run,
   and download `sign-translator-apk` under *Artifacts* (it's a zip with the APK inside).
-- **Releases:** pushing a tag such as `v1.0.0` attaches the APK to a GitHub Release.
+- **Releases:** the [Releases page](../../releases) has the APK for each version. To publish one, push a tag
+  such as `v1.1.0`, or run the *Build release APK* workflow by hand and enter the tag.
 
 To install, copy the APK to your phone, open it, and allow installs from that source when Android asks.
 Android 7.0 (API 24) or newer is required.
