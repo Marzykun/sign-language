@@ -3,64 +3,73 @@
 An Android app that reads American Sign Language (ASL) fingerspelling from the camera and types it out.
 Hold a letter steady for about a second to type it, and tap **Speak** to read the text aloud.
 
-Built with Flutter. Hand tracking and letter recognition run on the phone using
-[MediaPipe's Gesture Recognizer](https://ai.google.dev/edge/mediapipe/solutions/vision/gesture_recognizer),
-fine-tuned on a public ASL alphabet dataset. Nothing leaves the device.
+It works fully offline with nothing to train. Google's pretrained
+[MediaPipe Hand Landmarker](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker)
+(bundled in the app) finds 21 points on your hand, and hand-written geometry rules turn those points into letters.
+
+## Download
+
+Every push builds a release APK with GitHub Actions:
+
+- **Latest build:** open the [Actions tab](../../actions/workflows/build-apk.yml), pick the newest green run,
+  and download `sign-translator-apk` under *Artifacts* (it's a zip with the APK inside).
+- **Releases:** pushing a tag such as `v1.0.0` attaches the APK to a GitHub Release.
+
+To install, copy the APK to your phone, open it, and allow installs from that source when Android asks.
+Android 7.0 (API 24) or newer is required.
 
 ## How it works
 
 ```
-CameraX frame ─▶ MediaPipe Gesture Recognizer ─▶ label + score + 21 hand points
-   (Kotlin)          (gesture_recognizer.task)          │  EventChannel
-                                                         ▼
-                                        Flutter: LetterComposer (hold-to-type) ─▶ transcript, TTS
+CameraX frame ─▶ MediaPipe Hand Landmarker ─▶ 21 hand points ─▶ FingerspellingRules ─▶ LetterComposer ─▶ text, speech
+   (Kotlin)        (hand_landmarker.task)       EventChannel         (Dart)              (hold-to-type)
 ```
+
+The rules work out, for each finger, whether it's straight, bent or curled. They also check where the
+thumb sits and which way the hand points. For example:
+
+- **L:** index finger straight, thumb out, the rest curled.
+- **V:** index and middle fingers straight and spread apart.
+- **Y:** thumb and pinky out, the rest curled.
 
 | Path | What it is |
 |---|---|
-| `app/android/.../SignCamera.kt` | Camera preview (platform view) and recognizer; sends results to Dart |
-| `app/lib/letter_composer.dart` | Turns per-frame predictions into text (hold, repeat, flicker tolerance) |
+| `app/android/.../SignCamera.kt` | Camera preview (platform view) and hand tracking; sends points to Dart |
+| `app/lib/fingerspelling_rules.dart` | Hand points → letter |
+| `app/lib/letter_composer.dart` | Per-frame letters → typed text (hold, repeat, flicker tolerance) |
 | `app/lib/translator_screen.dart` | The UI |
-| `ml/train_asl_alphabet.ipynb` | Colab notebook that produces the model |
 
-## Setup
+## Supported letters
 
-You need Flutter, Android Studio (for the Android SDK) and an Android phone (API 24+) with USB debugging on.
-The emulator camera isn't good enough to test signing.
+| Recognised | Not supported |
+|---|---|
+| A B C D E F G H I K L O P Q R S U V W X Y (21 letters) | J, Z (they involve motion), M N T (the thumb is hidden under the fingers) |
 
-### 1. Get the model
+G and H are signed with the hand sideways; P and Q with it pointing down.
 
-The app loads `app/android/app/src/main/assets/gesture_recognizer.task`.
+## Using it
 
-**Option A: train the ASL model (about 20 minutes, mostly waiting)**
-1. Open `ml/train_asl_alphabet.ipynb` in [Google Colab](https://colab.research.google.com/) (File → Upload notebook).
-2. Click *Runtime → Run all*.
-3. When it finishes it downloads `gesture_recognizer.task`. Copy that file to the assets path above.
+- Keep one hand inside the frame, palm facing the camera, in good light.
+- Hold a letter until the ring fills to type it. Keep holding to repeat it (for double letters like "LL").
+- Use the buttons under the text for space, delete and clear.
 
-**Option B: quick smoke test with MediaPipe's stock model**
-```bash
-./scripts/fetch_default_model.sh
-```
-This model only knows gestures like 👍 and ✌️, so it won't type anything, but the overlay and labels will show that the camera and recognizer work.
+## Building it yourself
 
-### 2. Run
+You need Flutter 3.47+ and the Android SDK (installed with Android Studio).
 
 ```bash
 cd app
 flutter pub get
-flutter run
+flutter test             # unit tests for the rules and the composer
+flutter run              # on a phone with USB debugging enabled
+flutter build apk --release
 ```
 
-## Using it
-
-- Sign a letter with one hand inside the frame and hold it until the ring fills.
-- Keep holding to repeat it (for double letters like "LL").
-- The `space` and `del` signs from the dataset work, and so do the buttons under the text.
-- Use good, even light and a plain background.
+The release APK is signed with the debug key, which is fine for installing it yourself but not for the
+Play Store. Builds from different machines (including CI) use different debug keys, so to install a newer
+build you may need to uninstall the old one first.
 
 ## Limitations
 
-- Only the static alphabet. J and Z involve motion, so they're unreliable.
-- Look-alike letters (M/N/S/T/A, U/V) get confused sometimes.
-- If `pip install mediapipe-model-maker` fails in Colab (it pins an older TensorFlow), switch the runtime
-  to an older Python version if Colab offers one, or run the notebook locally with Python 3.10/3.11.
+- Rules are sensitive to hand angle. Face your palm to the camera and keep your fingers clearly visible.
+- Look-alike letters (A/S/E, U/V/R/K) can get confused.

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'fingerspelling_rules.dart';
 import 'landmark_painter.dart';
 import 'letter_composer.dart';
 import 'sign_camera.dart';
@@ -19,9 +20,9 @@ class TranslatorScreen extends StatefulWidget {
 class _TranslatorScreenState extends State<TranslatorScreen> {
   final _composer = LetterComposer();
   final _tts = FlutterTts();
-  StreamSubscription<GestureFrame>? _frames;
+  StreamSubscription<HandFrame>? _frames;
   PermissionStatus? _permission;
-  GestureFrame? _lastFrame;
+  HandFrame? _lastFrame;
   String? _error;
 
   @override
@@ -43,7 +44,10 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
       (frame) => setState(() {
         _lastFrame = frame;
         _error = null;
-        _composer.add(frame.label, frame.score, frame.timestampMs);
+        _composer.add(
+          FingerspellingRules.classify(frame.landmarks, aspect: frame.aspect),
+          frame.timestampMs,
+        );
       }),
       onError: (Object e) => setState(() {
         _error = e is PlatformException ? e.message : '$e';
@@ -141,25 +145,24 @@ class _TranslatorScreenState extends State<TranslatorScreen> {
 class _SignChip extends StatelessWidget {
   const _SignChip({required this.frame, required this.composer});
 
-  final GestureFrame? frame;
+  final HandFrame? frame;
   final LetterComposer composer;
 
   @override
   Widget build(BuildContext context) {
     final frame = this.frame;
     final candidate = composer.candidate;
-    final rawLabel = frame?.label ?? '';
     final String title;
     final String subtitle;
     if (candidate != null) {
-      title = switch (candidate) { 'space' => '␣', 'del' => '⌫', _ => candidate };
-      subtitle = 'Hold to type · ${((frame?.score ?? 0) * 100).round()}%';
+      title = candidate;
+      subtitle = 'Hold to type';
     } else if (frame == null || frame.landmarks.isEmpty) {
       title = '—';
       subtitle = 'Show your hand to the camera';
     } else {
       title = '?';
-      subtitle = rawLabel.isEmpty || rawLabel == 'none' ? 'Sign not recognised' : 'Saw "$rawLabel"';
+      subtitle = 'Letter not recognised';
     }
 
     final scheme = Theme.of(context).colorScheme;

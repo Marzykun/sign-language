@@ -2,35 +2,33 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-/// One analysed camera frame from the native recognizer.
-class GestureFrame {
-  const GestureFrame({
-    required this.label,
-    required this.score,
+/// One analysed camera frame from the native hand tracker.
+class HandFrame {
+  const HandFrame({
     required this.landmarks,
+    required this.aspect,
     required this.timestampMs,
     required this.mirrored,
   });
 
-  factory GestureFrame.fromMap(Map<Object?, Object?> map) {
+  factory HandFrame.fromMap(Map<Object?, Object?> map) {
     final coords = (map['landmarks'] as List?)?.cast<num>() ?? const [];
-    return GestureFrame(
-      label: map['label'] as String? ?? '',
-      score: (map['score'] as num?)?.toDouble() ?? 0,
+    return HandFrame(
       landmarks: [
         for (var i = 0; i + 1 < coords.length; i += 2)
           Offset(coords[i].toDouble(), coords[i + 1].toDouble()),
       ],
+      aspect: (map['aspect'] as num?)?.toDouble() ?? 1,
       timestampMs: (map['timestampMs'] as num?)?.toInt() ?? 0,
       mirrored: map['mirrored'] as bool? ?? false,
     );
   }
 
-  final String label;
-  final double score;
-
-  /// 21 hand points, normalised to 0–1 of the upright, un-mirrored image.
+  /// 21 hand points, normalised to 0–1 of the upright, un-mirrored image. Empty if no hand.
   final List<Offset> landmarks;
+
+  /// Image width / height.
+  final double aspect;
   final int timestampMs;
 
   /// True for the front camera, whose preview is shown mirrored.
@@ -42,10 +40,10 @@ class SignCamera {
   static const _results = EventChannel('sign_camera/results');
   static const _control = MethodChannel('sign_camera/control');
 
-  /// Errors arrive as [PlatformException]s with code `model`, `camera` or `recognizer`.
-  static Stream<GestureFrame> frames() => _results
+  /// Errors arrive as [PlatformException]s with code `model`, `camera` or `landmarker`.
+  static Stream<HandFrame> frames() => _results
       .receiveBroadcastStream()
-      .map((event) => GestureFrame.fromMap(event as Map<Object?, Object?>));
+      .map((event) => HandFrame.fromMap(event as Map<Object?, Object?>));
 
   static Future<void> switchCamera() => _control.invokeMethod('switchCamera');
 }

@@ -22,8 +22,8 @@ import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
-import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
-import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizerResult
+import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
+import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -34,7 +34,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Owns the camera and the MediaPipe gesture recognizer.
+ * Owns the camera and the MediaPipe hand landmarker (a pretrained model bundled in assets).
  *
  * Flutter talks to it over three channels:
  *  - platform view `sign_camera/preview`: the live camera preview
@@ -48,7 +48,7 @@ class SignCamera(
 ) {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val analysisExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private var recognizer: GestureRecognizer? = null
+    private var landmarker: HandLandmarker? = null
     private var eventSink: EventChannel.EventSink? = null
     private var previewView: PreviewView? = null
     private var useFrontCamera = true
@@ -99,7 +99,7 @@ class SignCamera(
 
     private fun bindCamera() {
         val view = previewView ?: return
-        if (recognizer == null && !createRecognizer()) return
+        if (landmarker == null && !createLandmarker()) return
 
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
@@ -129,9 +129,9 @@ class SignCamera(
         }, ContextCompat.getMainExecutor(context))
     }
 
-    private fun createRecognizer(): Boolean {
+    private fun createLandmarker(): Boolean {
         return try {
-            val options = GestureRecognizer.GestureRecognizerOptions.builder()
+            val options = HandLandmarker.HandLandmarkerOptions.builder()
                 .setBaseOptions(BaseOptions.builder().setModelAssetPath(MODEL_ASSET).build())
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setNumHands(1)
@@ -139,20 +139,20 @@ class SignCamera(
                 .setMinHandPresenceConfidence(0.5f)
                 .setMinTrackingConfidence(0.5f)
                 .setResultListener(::onResult)
-                .setErrorListener { e -> sendError("recognizer", e.message ?: "Recognizer error") }
+                .setErrorListener { e -> sendError("landmarker", e.message ?: "Hand tracking error") }
                 .build()
-            recognizer = GestureRecognizer.createFromOptions(context, options)
+            landmarker = HandLandmarker.createFromOptions(context, options)
             true
         } catch (e: Exception) {
             Log.e(TAG, "Could not load $MODEL_ASSET", e)
-            sendError("model", "Could not load $MODEL_ASSET. See the README for how to add it.")
+            sendError("model", "Could not load the hand tracking model ($MODEL_ASSET).")
             false
         }
     }
 
     private fun analyze(image: ImageProxy) {
-        // Recognition runs on the upright, un-mirrored image. The Flutter side mirrors the
-        // landmark overlay for the front camera, which keeps handedness correct for the model.
+        // Tracking runs on the upright, un-mirrored image; the Flutter side mirrors the overlay
+        // for the front camera.
         val bitmap = image.use { proxy ->
             val raw = proxy.toBitmap()
             val rotation = proxy.imageInfo.rotationDegrees
@@ -164,16 +164,14 @@ class SignCamera(
         // MediaPipe rejects timestamps that don't strictly increase.
         val timestampMs = maxOf(SystemClock.uptimeMillis(), lastTimestampMs + 1)
         lastTimestampMs = timestampMs
-        recognizer?.recognizeAsync(BitmapImageBuilder(bitmap).build(), timestampMs)
+        landmarker?.detectAsync(BitmapImageBuilder(bitmap).build(), timestampMs)
     }
 
-    private fun onResult(result: GestureRecognizerResult, input: MPImage) {
-        val gesture = result.gestures().firstOrNull()?.firstOrNull()
+    private fun onResult(result: HandLandmarkerResult, input: MPImage) {
         val landmarks = result.landmarks().firstOrNull()?.flatMap { listOf(it.x().toDouble(), it.y().toDouble()) }
         val event = mapOf(
-            "label" to (gesture?.categoryName() ?: ""),
-            "score" to (gesture?.score()?.toDouble() ?: 0.0),
             "landmarks" to (landmarks ?: emptyList<Double>()),
+            "aspect" to input.width.toDouble() / input.height,
             "timestampMs" to result.timestampMs(),
             "mirrored" to useFrontCamera,
         )
@@ -185,13 +183,13 @@ class SignCamera(
     }
 
     fun close() {
-        recognizer?.close()
-        recognizer = null
+        landmarker?.close()
+        landmarker = null
         analysisExecutor.shutdown()
     }
 
     companion object {
         private const val TAG = "SignCamera"
-        const val MODEL_ASSET = "gesture_recognizer.task"
+        const val MODEL_ASSET = "hand_landmarker.task"
     }
 }
